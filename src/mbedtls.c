@@ -10,6 +10,7 @@
 #include <stdlib.h>
 
 #ifdef USE_MBED_TLS
+#define MBEDTLS_ALLOW_PRIVATE_ACCESS
 
 #include "mbedtls/ccm.h"
 #include "mbedtls/md.h"
@@ -857,6 +858,8 @@ bool ECDSA_Sign(COSE * pSigner, int index, const eckey_t * eckey, int cbitDigest
 	int cbR;
 	mbedtls_md_type_t mdType;
 	const mbedtls_md_info_t *pmdInfo;
+    mbedtls_entropy_context  entropy;
+	mbedtls_ctr_drbg_context ctrDrbg;
 	mbedtls_mpi r;
 	mbedtls_mpi s;
 #ifdef USE_CBOR_CONTEXT
@@ -865,6 +868,9 @@ bool ECDSA_Sign(COSE * pSigner, int index, const eckey_t * eckey, int cbitDigest
 	cn_cbor * p = NULL;
 	bool result = false;
 
+	mbedtls_entropy_init(&entropy);
+    mbedtls_ctr_drbg_init(&ctrDrbg);
+    mbedtls_ctr_drbg_seed(&ctrDrbg, mbedtls_entropy_func, &entropy, NULL, 0);
 	mbedtls_mpi_init(&r);
 	mbedtls_mpi_init(&s);
 
@@ -891,7 +897,7 @@ bool ECDSA_Sign(COSE * pSigner, int index, const eckey_t * eckey, int cbitDigest
 	CHECK_CONDITION(pmdInfo != NULL, COSE_ERR_INVALID_PARAMETER);
 	CHECK_CONDITION(mbedtls_md(pmdInfo, rgbToSign, cbToSign, rgbDigest) == 0, COSE_ERR_INVALID_PARAMETER);
 
-	CHECK_CONDITION(mbedtls_ecdsa_sign_det((mbedtls_ecp_group*)&eckey->grp, &r, &s, &eckey->d, rgbDigest, mbedtls_md_get_size(pmdInfo), mdType) == 0, COSE_ERR_CRYPTO_FAIL);
+	CHECK_CONDITION(mbedtls_ecdsa_sign_det_ext((mbedtls_ecp_group*)&eckey->grp, &r, &s, &eckey->d, rgbDigest, mbedtls_md_get_size(pmdInfo), mdType, mbedtls_ctr_drbg_random, &ctrDrbg) == 0, COSE_ERR_CRYPTO_FAIL);
 
 	cbR = (eckey->grp.nbits + 7) / 8;
 
@@ -915,6 +921,8 @@ errorReturn:
 	COSE_FREE(pbSig, context);
 	mbedtls_mpi_free(&r);
 	mbedtls_mpi_free(&s);
+    mbedtls_entropy_free(&entropy);
+	mbedtls_ctr_drbg_free(&ctrDrbg);
 	return result;
 #else
 	return false;
@@ -1069,22 +1077,18 @@ static int ctr_drbg_self_test_entropy( void *data, unsigned char *buf, size_t le
     return( 0 );
  }
 
-void rand_bytes(byte* pb, size_t cb){
-     
-     mbedtls_ctr_drbg_context ctx;
-    // unsigned char buf[16];
-     
-     mbedtls_ctr_drbg_init( &ctx );
-     
-     mbedtls_ctr_drbg_seed_entropy_len( &ctx, ctr_drbg_self_test_entropy, (void *) entropy_source_pr, nonce_pers_pr, 16, 32 );
-     
-     //mbedtls_ctr_drbg_set_prediction_resistance( &ctx, MBEDTLS_CTR_DRBG_PR_ON );
+void rand_bytes(byte* pb, size_t cb) {
+    mbedtls_entropy_context  entropy;
+	mbedtls_ctr_drbg_context ctrDrbg;
+
+	mbedtls_entropy_init(&entropy);
+    mbedtls_ctr_drbg_init(&ctrDrbg);
+    mbedtls_ctr_drbg_seed(&ctrDrbg, mbedtls_entropy_func, &entropy, nonce_pers_pr, sizeof(nonce_pers_pr));
     
-     mbedtls_ctr_drbg_random( &ctx, pb, cb );
-     //mbedtls_ctr_drbg_random( &ctx, buf, MBEDTLS_CTR_DRBG_BLOCKSIZE );
-     //memcmp( buf, result_pr, MBEDTLS_CTR_DRBG_BLOCKSIZE ) );
-     
-     mbedtls_ctr_drbg_free( &ctx );
+	mbedtls_ctr_drbg_random(&ctrDrbg, pb, cb);
+
+	mbedtls_ctr_drbg_free(&ctrDrbg);
+    mbedtls_entropy_free(&entropy);
 }
 //END OF TODO RANDOM BYTES
 
