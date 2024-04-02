@@ -8,6 +8,7 @@
 
 
 #ifdef USE_MBED_TLS
+#define MBEDTLS_ALLOW_PRIVATE_ACCESS
 #include <mbedtls/ecdsa.h>
 #else
 #include <openssl/cmac.h>
